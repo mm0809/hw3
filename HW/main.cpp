@@ -9,8 +9,13 @@
 
 #include "stm32l475e_iot01_accelero.h"
 
-
 #include "iostream"
+#include <cmath>
+
+
+DigitalOut led1(LED1);
+DigitalOut led2(LED2);
+DigitalOut led3(LED3);
 
 
 uLCD_4DGL uLCD(D1, D0, D2); // uLCD
@@ -18,38 +23,48 @@ uLCD_4DGL uLCD(D1, D0, D2); // uLCD
 BufferedSerial pc(USBTX, USBRX);    // rpc
 void LEDControl(Arguments* in, Reply* out); // the parameter is necessary
 void GestureUI(Arguments* in, Reply* out); 
+void AngleDetect(Arguments* in, Reply* out); 
 void loopState(Arguments* in, Reply* out); 
 RPCFunction testRPC(&LEDControl, "LEDtest");
 RPCFunction GestureUIRPC(&GestureUI, "AI");
 RPCFunction loopStateRPC(&loopState, "loop");
+RPCFunction AngleDetectRPC(&AngleDetect, "Angle");
 
+//-----AI-----
 Thread tAI;
 EventQueue queueAI(32 * EVENTS_EVENT_SIZE);
 int runAI();
 void confirm(MQTT::Client<MQTTNetwork, Countdown>* client);
 
 InterruptIn Ubutton(USER_BUTTON);
+//-----End AI-----
 
 int i = 0;
 
-// MQTT
+//-----MQTT-----
 WiFiInterface *wifi;
 volatile int message_num = 0;
 volatile int arrivedcount = 0;
 volatile bool closed = false;
 
-const char* topic = "SetAngle";
+const char* topicSetAngle = "SetAngle";
+const char* topicTiltAngle = "TiltAngle";
 
 Thread mqtt_thread(osPriorityHigh);
 EventQueue mqtt_queue;
 
 void messageArrived(MQTT::MessageData& md);
-void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client, int A);
+void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client, const char* topic, int A);
 void mqttHandle(MQTT::Client<MQTTNetwork, Countdown>* client);
+//-----End MQTT-----
 
+//-----Angle detection-----
 EventQueue angle_queue(32 * EVENTS_EVENT_SIZE);
 Thread angle_thread;
+void runAngle();
 
+int angleList[3] = {15, 30, 45};
+//-----End Angle detection-----
 
 volatile int state = 0;
 volatile int angleID = 0;
@@ -59,12 +74,17 @@ volatile int angleID = 0;
 MQTT::Client<MQTTNetwork, Countdown>* pclient;
 int main()
 {
+    // init leds
+    led1 = 0;
+    led2 = 0;
+    led3 = 0;
     //-----MQTT init-----
     wifi = WiFiInterface::get_default_instance();
     if (!wifi) {
             printf("ERROR: No WiFiInterface found.\r\n");
             return -1;
     }
+    led2 = 1;
 
 
     printf("\nConnecting to %s...\r\n", MBED_CONF_APP_WIFI_SSID);
@@ -106,7 +126,7 @@ int main()
             printf("Fail to connect MQTT\r\n");
     }
 
-    if (client.subscribe(topic, MQTT::QOS0, messageArrived) != 0){
+    if (client.subscribe(topicSetAngle, MQTT::QOS0, messageArrived) != 0){
             printf("Fail to subscribe\r\n");
     }
 
@@ -126,14 +146,16 @@ int main()
     // -----RPC stufs----
     char buf[256], outbuf[256];
     FILE *devin = fdopen(&pc, "r"); FILE *devout = fdopen(&pc, "w");
-    uLCD.printf("\nuLCD working\n");    //Default Green on black text
+    uLCD.printf("\nuLCD work\n");    //Default Green on black text
 
     tAI.start(callback(&queueAI, &EventQueue::dispatch_forever));
+    angle_thread.start(callback(&angle_queue, &EventQueue::dispatch_forever));
     Ubutton.rise(mqtt_queue.event(&confirm, &client));
 
     //Ubutton.rise(&confirm);
 
 
+    led2 = 1;
     while(1) {
         memset(buf, 0, 256);
         for (int i = 0; ; i++) {
@@ -166,11 +188,19 @@ void GestureUI(Arguments* in, Reply* out)
 
 void loopState(Arguments* in, Reply* out)
 {
+    led1 = 0;
+    led3 = 0;
     state = 0;
+}
+void AngleDetect(Arguments* in, Reply* out)
+{
+    state = 2;  
+    angle_queue.call(runAngle);
 }
 
 void confirm(MQTT::Client<MQTTNetwork, Countdown>* client) { 
-    mqtt_queue.call(&publish_message, client, angleID);
+    if (state == 1)
+        mqtt_queue.call(&publish_message, client, topicSetAngle, angleID);
     //client->yield(700);
 }
 
@@ -182,8 +212,55 @@ void mqttHandle(MQTT::Client<MQTTNetwork, Countdown>* client)
     }
 }
 
+void runAngle()
+{
+    int16_t XYZ[3] = {0};
+    int16_t XYZr[3] = {0};
+    cout << "Angle start" << endl;
+
+    cout << "gravity refference setting" << endl;
+    BSP_ACCELERO_Init();
+    for (int i = 0; i < 15; i++) {
+        led1 = 1;
+        ThisThread::sleep_for(100ms);
+        led1 = 0;
+        ThisThread::sleep_for(100ms);
+    }
+    BSP_ACCELERO_AccGetXYZ(XYZr);
+    printf("%d, %d, %d\n", XYZr[0], XYZr[1], XYZr[2]);
+    cout << "gravity refference setting done" << endl;
+
+    float dotProduct;
+    float lengthr = sqrt(XYZr[0]*XYZr[0] + XYZr[1]*XYZr[1] + XYZr[2]*XYZr[2]);
+    float lengthProduct;
+    float angle;
+
+    led1 = 1;
+    while (state == 2) {
+        ThisThread::sleep_for(500ms);
+        BSP_ACCELERO_AccGetXYZ(XYZ);
+        printf("%d, %d, %d\n", XYZ[0], XYZ[1], XYZ[2]);
+
+        dotProduct = XYZr[0]*XYZ[0] + XYZr[1]*XYZ[1] + XYZr[2]*XYZ[2]; 
+        lengthProduct = lengthr * sqrt(XYZ[0]*XYZ[0] + XYZ[1]*XYZ[1] + XYZ[2]*XYZ[2]);
+
+        angle = acos(dotProduct / lengthProduct) * 57.29577;
+        cout << "Angle: " << angle << endl; 
+
+        uLCD.locate(0, 5);
+        uLCD.printf("\ntilt angle: %.1f", angle);
+        if (angle >= angleList[angleID])
+            mqtt_queue.call(&publish_message, pclient, topicTiltAngle, 9);
+
+        //cout << "Angle detect one" << endl;
+    }
+    led1 = 0;
+    cout << "Angle end" << endl;
+}
+
 int runAI() {
 
+    led3 = 1;
   // Whether we should clear the buffer next time we fetch data
   bool should_clear_buffer = false;
   bool got_data = false;
@@ -256,6 +333,7 @@ int runAI() {
   while (true) {
     if (state == 0) {
         cout << "set a ngleID: " << angleID << endl;
+        led3 = 0;
       return 1;
     }
 
@@ -289,7 +367,7 @@ int runAI() {
       cout << gesture_index << endl;
       angleID = gesture_index;
       uLCD.locate(1, 0);
-      uLCD.printf("\nangle: %d", angleID);
+      uLCD.printf("\nangle: %d", angleList[angleID]);
     }
   }
 }
@@ -306,11 +384,11 @@ void messageArrived(MQTT::MessageData& md) {
     ++arrivedcount;
 }
 
-void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client, int A) {
+void publish_message(MQTT::Client<MQTTNetwork, Countdown>* client, const char* topic, int A) {
     message_num++;
     MQTT::Message message;
     char buff[100];
-    sprintf(buff, "AngleID: %d", A);
+    sprintf(buff, "%d", A);
     message.qos = MQTT::QOS0;
     message.retained = false;
     message.dup = false;
