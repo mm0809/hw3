@@ -35,12 +35,12 @@
     {
         "module": "[fill]",
         "size": {
-            ".text": 258,
+            ".text": 216,
             ".data": 24,
-            ".bss": 49,
-            ".text-delta": -12,
+            ".bss": 45,
+            ".text-delta": -42,
             ".data-delta": 0,
-            ".bss-delta": 0
+            ".bss-delta": -4
         }
     },
     {
@@ -134,12 +134,12 @@
     {
         "module": "main.o",
         "size": {
-            ".text": 5716,
+            ".text": 4936,
             ".data": 56,
-            ".bss": 64633,
-            ".text-delta": 12,
+            ".bss": 64629,
+            ".text-delta": -780,
             ".data-delta": 0,
-            ".bss-delta": 0
+            ".bss-delta": -4
         }
     },
     {
@@ -277,20 +277,20 @@
     {
         "module": "wifi_mqtt/MQTT",
         "size": {
-            ".text": 1832,
+            ".text": 1054,
             ".data": 0,
             ".bss": 4,
-            ".text-delta": 0,
+            ".text-delta": -778,
             ".data-delta": 0,
             ".bss-delta": 0
         }
     },
     {
         "summary": {
-            "static_ram": 90856,
-            "static_ram_delta": 0,
-            "total_flash": 365084,
-            "total_flash_delta": 0
+            "static_ram": 90848,
+            "static_ram_delta": -8,
+            "total_flash": 363484,
+            "total_flash_delta": -1600
         }
     }
 ]
