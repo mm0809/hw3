@@ -38,7 +38,10 @@ $ sudo mbed compile --source . --source ~/ee2405/mbed-os/ -m B_L4S5I_IOT01A -t G
 | LED 1    | LED 2 | LED 3 | state                     |
 | -------- | ----- | ----- | ------------------------- |
 | 0        | 0     | 0     | initlizing                |
-| 0        | 1     | 0     | RPC loop                  |
+| 0        | 1     | 0     | RPC loop(init done)       |
 | 0        | 1     | 1     | gesture detecting         |
 | blinking | 1     | 0     | gravity reference setting |
 | 1        | 1     | 0     | tilt angle detecting      |
+
+## Result screen shot
+![](https://github.com/mm0809/hw3/blob/main/HW/img/Screenshot%20from%202021-05-10%2001-28-03.png?raw=true)
